@@ -44,6 +44,19 @@ long getpointsinside(long ninp,float *x,float *y,long *l,long *selected_lines,fl
     return 0;
 }
 
+void warn(char *message) {
+    char ch;
+    float ax,ay;
+    cpgsvp(0.15,0.85,0.15,0.30);
+    cpgswin(0.0,1.0,0.0,1.0);
+    cpgrect(0.0,1.0,0.0,1.0);
+    cpgsci(0);
+    cpgrect(0.01,.99,0.01,0.99);
+    cpgsci(1);
+    cpgmtxt("T",-1.0,0.02,.0,message);
+    cpgband (7, 0, 0, 0, &ax, &ay, &ch);
+}
+
 char *getfilename()
 {
     char *filename;
@@ -87,6 +100,18 @@ char *getfilename()
     return NULL;
 }
 
+long saveundo(long ninp, float *x, float *y, long *l, float **nx, float **ny, long **nl) {
+    (*nx) = (float *) realloc((*nx), sizeof(float)*(ninp));
+    (*ny) = (float *) realloc((*ny), sizeof(float)*(ninp));
+    (*nl) = (long *)  realloc((*nl), sizeof(long)*(ninp));
+
+    memcpy(*nx, x, sizeof(float) * ninp);
+    memcpy(*ny, y, sizeof(float) * ninp);
+    memcpy(*nl, l, sizeof(long) * ninp);
+
+    return ninp;
+}
+
 long exportline(long ninp,float *x, float *y, long *l, long *selected_lines)
 {
     long i,pl,nexp=0;
@@ -99,7 +124,7 @@ long exportline(long ninp,float *x, float *y, long *l, long *selected_lines)
     out=fopen(filename,"w");
     if (out == NULL )
     {
-        fprintf(stderr,"Export Failed !\n");
+        warn("Export Failed !");
         return -1;
     }
 
@@ -129,7 +154,7 @@ long exportline(long ninp,float *x, float *y, long *l, long *selected_lines)
         if (pl) fprintf(out,"%f %f\n",x[i],y[i]);
     }
 
-    fprintf(stderr,"Exported %d lines to file %s\n",nexp,filename);
+    fprintf(stderr, "Exported %d lines to file %s\n",nexp,filename);
     if (filename!=NULL) free(filename);
     filename=NULL;
     fclose(out);
@@ -182,7 +207,7 @@ long findindex(float ax,float ay,float *x,float *y, long *l, long ninp)
     long pmin;
     long i;
 
-    if (ninp == 0) return 0;
+    if (ninp == 0) return -1;
 
     dmin=sqrt(powf(ax-x[0],2)+powf(ay-y[0],2));
     pmin=0;
@@ -206,7 +231,7 @@ long findline(float ax,float ay,float *x,float *y, long *l, long ninp)
     long pmin;
     long i;
 
-    if (ninp == 0) return 0;
+    if (ninp == 0) return -1;
 
     dmin=sqrt(powf(ax-x[0],2)+powf(ay-y[0],2));
     pmin=l[0];
@@ -222,6 +247,23 @@ long findline(float ax,float ay,float *x,float *y, long *l, long ninp)
     }
 
     return pmin;
+}
+
+void findlineedges(long *l, long ninp, long target, long *s, long *e) {
+    long i;
+    *s = -1;
+    *e = -1;
+
+    for(i=0;i<ninp;i++) {
+        if (l[i] == target) {
+            if (*s == -1) *s = i;
+        }
+        if (*s == -1) continue;
+        if (l[i] != target) return;
+        *e = i;
+    }
+
+    return;
 }
 
 void minmax(float *xx, long npts,float *xmin,float *xmax)
@@ -314,11 +356,11 @@ long plotme(long argc, char ** argv, long ninp,float *x,float *y, long *l,long *
         cpgmtxt("R",1.2,0.0,0.0,string);
     }
 
-    if (ninp == 0) return;
-    if (x == NULL) return;
-    if (y == NULL) return;
-    if (l == NULL) return;
-    if (selected_lines == NULL) return;
+    if ((ninp == 0)||(x == NULL)||(y == NULL)||(l == NULL)||(selected_lines == NULL)) {
+        cpgsch(1.0);
+        cpgsci(1);
+        return;
+    }
 
     if (drawpoints) {
         int first = 0;
@@ -396,34 +438,50 @@ long plotme(long argc, char ** argv, long ninp,float *x,float *y, long *l,long *
     return 0;
 }
 
-void reindex(long ninp, long *l, long *selected_lines, long nsel, long keep) {
+long *reindex(long ninp, long *l, long **selected_lines, long *nsel, long keep) {
     long seq = 0;
     long current = -1;
-    long i;
+    long i = 0, linen = 0;
 
-    long *stemp = malloc(sizeof(long) * nsel);
-    for(i = 0; i < nsel; i++)
-        stemp[i] = NSEL;
+    long *selcurrent = *selected_lines;
 
-    if (ninp > 0) {
-        current = l[0];
-        if (keep) stemp[seq] = selected_lines[current];
-        for(i=0;i<ninp;i++) {
-            if (l[i] != current) {
-                seq ++;
-                current = l[i];
-                if (keep) stemp[seq] = selected_lines[current];
-            }
-            l[i] = seq;
-        }
+    if (ninp == 0) {
+        if ((*selected_lines) != NULL) free(*selected_lines);
+        *nsel = 0;
+        return NULL;
     }
 
-    for(i = 0; i < nsel; i++)
-        selected_lines[i] = stemp[i];
+    // Find max number of lines
+    current = l[0];
+    linen = 1;
+    for(i = 1; i < ninp; i++) {
+        if (l[i] != current)
+            linen++;
+        current = l[i];
+    }
 
-    free(stemp);
-    stemp = NULL;
-    return;
+    // Build a new vector
+    long *stemp = malloc(sizeof(long) * linen);
+    for(i = 0; i < linen; i++)
+        stemp[i] = NSEL;
+
+    // Re-build
+    seq = 0;
+    current = l[0];
+    if (keep && selcurrent!=NULL && current < *nsel) stemp[seq] = selcurrent[current];
+    for(i=0;i<ninp;i++) {
+        if (l[i] != current) {
+            seq ++;
+            current = l[i];
+            if (keep && selcurrent!=NULL && current < *nsel) stemp[seq] = selcurrent[current];
+        }
+        l[i] = seq;
+    }
+
+    if (*selected_lines != NULL) free(*selected_lines);
+    *nsel = linen;
+
+    return stemp;
 }
 
 long cut(long ninp, float **x, float **y, long **l, long n1, long n2) {
@@ -450,21 +508,10 @@ long deletesegments(long ninp, float **x, float **y, long **l, long *selected_li
 
     while (i < nsel) {
         if (selected_lines[i] == SEL) {
-            long n1 = -1;
-            long n2 = -1;
-            long j;
-            for(j=0;j<ninp && n2 == -1;j++) {
-                if ((*l)[j] == i && n1 == -1) n1 = j;
-                if (n1 != -1 && (*l)[j] != i) n2 = j - 1;
-            }
-            if (n1 == -1) {
-                fprintf(stderr,"Cannot find segments edjes.");
-                return;
-            }
-            if (n2 == -1) n2 = ninp - 1;
+            long n1, n2;
+            findlineedges(*l,ninp,i,&n1,&n2);
             ninp = cut(ninp,x,y,l,n1,n2);
             selected_lines[i] = NSEL;
-            reindex(ninp,*l, selected_lines, nsel,1);
             i = 0;
             continue;
         }
@@ -616,8 +663,8 @@ void wrap(long ninp, float *x) {
 
 void resetzoom(float *x, float *y, long ninp, float *xmin, float *xmax, float *ymin, float *ymax) {
     // Zoom all data
-    float x1,x2;
-    float y1,y2;
+    float x1 = 0.0,x2 = 0.0;
+    float y1 = 0.0,y2 = 0.0;
 
     minmax(x,ninp,&x1,&x2);
     minmax(y,ninp,&y1,&y2);
@@ -684,12 +731,72 @@ void zoom(float *x, float *y, long ninp, float x1, float y1, float *xmin, float 
     *ymax = y2;
 }
 
+long join(long ninp, float **x, float **y, long **l, long *selected_lines, long nsel, long target) {
+    long i, source = -1;
+
+    // Find source segment
+    for(i=0;i<nsel;i++) {
+        if (selected_lines[i] == SEL) {
+            if (source == -1) {
+                source = i;
+                continue;
+            }
+            warn("Cannot handle more than one selected line for merge !");
+            return ninp;
+        }
+    }
+
+    if (source == -1) {
+        warn("Need one selected segment to merge.");
+        return ninp;
+    }
+
+    // Check that we have distinct segments
+    if (source == target) {
+        warn("Cannot merge segment with itself");
+        return ninp;
+    }
+
+    // Merge
+    long s1,s2;
+    long e1, e2;
+
+    findlineedges(*l, ninp, source, &s1, &e1);
+    findlineedges(*l, ninp, target, &s2, &e2);
+
+    long from = ninp;
+    ninp += (e1-s1+1);
+    ninp += (e2-s2+1);
+
+    (*x) = (float *) realloc((*x), sizeof(float)*(ninp));
+    (*y) = (float *) realloc((*y), sizeof(float)*(ninp));
+    (*l) = (long *)  realloc((*l), sizeof(long)*(ninp));
+
+    for(i=s1;i<=e1;i++,from++) {
+        (*x)[from] = (*x)[i];
+        (*y)[from] = (*y)[i];
+        (*l)[from] = -1;
+    }
+
+    for(i=s2;i<=e2;i++,from++) {
+        (*x)[from] = (*x)[i];
+        (*y)[from] = (*y)[i];
+        (*l)[from] = -1;
+    }
+
+    // Clean up
+    selected_lines[target] = SEL;
+    ninp = deletesegments(ninp, x, y, l, selected_lines, nsel);
+
+    return ninp;
+}
+
 long ctlplot(long argc, char **argv)
 {
     // Data helpers
     float xmin,xmax;
     float ymin,ymax;
-    float ax,ay;
+    float ax = 0.0, ay = 0.0;
     char ch;
     long i, j;
 
@@ -702,15 +809,21 @@ long ctlplot(long argc, char **argv)
     long drawlabel = 1;
 
     // Selection
-    long *selected_lines=NULL;
+    long *selected_lines = NULL;
     long nsel = 0;
     long saved = 0;
 
     // Data Holders
     float *x = NULL;
     float *y = NULL;
-    long *l = NULL;
+    long  *l = NULL;
     long ninp = 0;
+
+    // Data Undo Holders
+    float *nx = NULL;
+    float *ny = NULL;
+    long  *nl = NULL;
+    long nninp = 0;
 
     // Import file
     for (i = 1; i < argc; i ++) {
@@ -721,6 +834,9 @@ long ctlplot(long argc, char **argv)
         ninp = ret;
     }
 
+    // Prepare selected lines
+    selected_lines = reindex(ninp, l, &selected_lines, &nsel, 0);
+
     saved = 1;
 
     cpgopen("/xwindow");
@@ -729,34 +845,55 @@ long ctlplot(long argc, char **argv)
     resetzoom(x,y,ninp,&xmin,&xmax,&ymin,&ymax);
     cpgenv(xmin,xmax,ymin,ymax,0,0);
 
-    // Prepare selected lines
-    {
-        long lmin,lmax;
-        dminmax(l,ninp,&lmin,&lmax);
-        nsel = (5*lmax + 1);
-        selected_lines=malloc(sizeof(long)*nsel);
-        if (selected_lines == NULL) return -1;
-    }
-    reindex(ninp, l, selected_lines, nsel, 0);
-
     ch='A';
     while (ch!='Q')
     {
         cpgeras();
-        cpgenv(xmin,xmax,ymin,ymax,0,0);
+        cpgenv(xmin, xmax, ymin, ymax, 0, 0);
         plotme(argc, argv, ninp,x,y,l,selected_lines,drawpoints, drawline, drawse,drawlabel, saved);
         cpgband (7, 0, 0, 0, &ax, &ay, &ch);
         ch = toupper (ch);
         switch (ch)
         {
+        case 'J':
+            i = findline(ax,ay,x,y,l,ninp);
+            if (i == -1) break;
+            nninp = saveundo(ninp, x, y, l, &nx, &ny, &nl);
+            ninp = join(ninp, &x, &y, &l, selected_lines, nsel, i);
+            selected_lines = reindex(ninp,l,&selected_lines,&nsel,0);
+            break;
+        case 'Y':
+            // Restore last saveundo stuff
+            if (nl != NULL) {
+                if (x != NULL) free(x);
+                if (y != NULL) free(y);
+                if (l != NULL) free(l);
+
+                x = nx;
+                y = ny;
+                l = nl;
+                ninp = nninp;
+
+                nx = NULL;
+                ny = NULL;
+                nl  = NULL;
+                nninp = 0;
+
+                selected_lines = reindex(ninp,l, &selected_lines, &nsel,0);
+            }
+            break;
+
         case 'N':
+            nninp = saveundo(ninp, x, y, l, &nx, &ny, &nl);
             ninp = addsegment(ninp,&x,&y,&l);
-            reindex(ninp,l,selected_lines,nsel,0);
+            selected_lines = reindex(ninp,l,&selected_lines,&nsel,1);
             saved = 0;
             break;
 
         case 'D':
+            nninp = saveundo(ninp, x, y, l, &nx, &ny, &nl);
             ninp = deletesegments(ninp,&x,&y,&l,selected_lines, nsel);
+            selected_lines = reindex(ninp,l,&selected_lines,&nsel,1);
             saved = 0;
             break;
 
@@ -765,12 +902,15 @@ long ctlplot(long argc, char **argv)
             break;
 
         case 'B':
+            nninp = saveundo(ninp, x, y, l, &nx, &ny, &nl);
             // Split a line segment
             i=findline(ax,ay,x,y,l,ninp);
+            if (i == -1) break;
             if (selected_lines[i]==NSEL) {
                 fprintf(stderr,"ooops: This line is not selected !\n");
             } else {
                 j=findindex(ax,ay,x,y,l,ninp);
+                if (j == -1) break;
                 {
                     long lmin,lmax;
                     dminmax(l,ninp,&lmin,&lmax);
@@ -779,7 +919,7 @@ long ctlplot(long argc, char **argv)
                         l[j]=lmax;
                         j++;
                     }
-                    reindex(ninp, l, selected_lines, nsel,1);
+                    selected_lines = reindex(ninp,l,&selected_lines,&nsel,1);
                 }
             }
             saved = 0;
@@ -798,6 +938,7 @@ long ctlplot(long argc, char **argv)
         case ' ':
             // Invert selection for close line
             i=findline(ax,ay,x,y,l,ninp);
+            if (i == -1) break;
             if (selected_lines[i]==NSEL)
                 selected_lines[i]=SEL;
             else
@@ -805,8 +946,10 @@ long ctlplot(long argc, char **argv)
             break;
 
         case 'R':
+            nninp = saveundo(ninp, x, y, l, &nx, &ny, &nl);
             // Reverse Line
             i=findline(ax,ay,x,y,l,ninp);
+            if (i == -1) break;
             reverse_line(ninp,x,y,l,i);
             saved = 0;
             break;
@@ -908,15 +1051,16 @@ long ctlplot(long argc, char **argv)
             cpgmtxt("T",-2.0-0.3,0.02,0.0,"q - Quit");
             cpgmtxt("T",-3.0-0.3,0.02,0.0,"h - Help");
             cpgmtxt("T",-4.0-0.3,0.02,0.0,"e - Export");
+            cpgmtxt("T",-5.0-0.3,0.02,0.0,"y - Undo");
 
             cpgsci(5);
-            cpgmtxt("T",-6.0+0.0,0.02,0.0,"Zoom/Plot Controls:");
+            cpgmtxt("T",-7.0+0.0,0.02,0.0,"Zoom/Plot Controls:");
             cpgsci(1);
-            cpgmtxt("T",-7.0-0.3,0.02,0.0,"x - Zoom (right mouse click)");
-            cpgmtxt("T",-8.0-0.3,0.02,0.0,"xx - Reset Zoom");
-            cpgmtxt("T",-9.0-0.3,0.02,0.0,"p - Show points On/Off");
-            cpgmtxt("T",-10.0-0.3,0.02,0.0,"l - Show lines On/Off");
-            cpgmtxt("T",-11.0-0.3,0.02,0.0,"m - Show SE markers On/Off");
+            cpgmtxt("T",-8.0-0.3,0.02,0.0,"x - Zoom (right mouse click)");
+            cpgmtxt("T",-9.0-0.3,0.02,0.0,"xx - Reset Zoom");
+            cpgmtxt("T",-10.0-0.3,0.02,0.0,"p - Show points On/Off");
+            cpgmtxt("T",-11.0-0.3,0.02,0.0,"l - Show lines On/Off");
+            cpgmtxt("T",-12.0-0.3,0.02,0.0,"m - Show SE markers On/Off");
 
             cpgsci(5);
             cpgmtxt("T",-1.0-0.0,0.52,0.0,"Modification Commands:");
@@ -928,15 +1072,16 @@ long ctlplot(long argc, char **argv)
             cpgmtxt("T",-6.0-0.3,0.52,0.0,"d - delete segment");
             cpgmtxt("T",-7.0-0.3,0.52,0.0,"u - Unwrap coordinates");
             cpgmtxt("T",-8.0-0.3,0.52,0.0,"w - Wrap coordinates");
+            cpgmtxt("T",-9.0-0.3,0.52,0.0,"j - Join current and selected");
 
             cpgsci(5);
-            cpgmtxt("T",-10.0+0.0,0.52,0.0,"Selection Controls:");
+            cpgmtxt("T",-11.0+0.0,0.52,0.0,"Selection Controls:");
             cpgsci(1);
-            cpgmtxt("T",-11.0-0.3,0.52,0.0,"SPACE - Select near segment");
-            cpgmtxt("T",-12.0-0.3,0.52,0.0,"i - Invert Selection");
-            cpgmtxt("T",-13.0-0.3,0.52,0.0,"s - Select by Region ");
-            cpgmtxt("T",-14.0-0.3,0.52,0.0,"    (point intersect)");
-            cpgmtxt("T",-15.0-0.3,0.52,0.0,"z - Zero selection");
+            cpgmtxt("T",-12.0-0.3,0.52,0.0,"SPACE - Select near segment");
+            cpgmtxt("T",-13.0-0.3,0.52,0.0,"i - Invert Selection");
+            cpgmtxt("T",-14.0-0.3,0.52,0.0,"s - Select by Region ");
+            cpgmtxt("T",-15.0-0.3,0.52,0.0,"    (point intersect)");
+            cpgmtxt("T",-16.0-0.3,0.52,0.0,"z - Zero selection");
 
             // Finish Help
             cpgband (7, 0, 0, 0, &ax, &ay, &ch);
@@ -981,10 +1126,16 @@ long main(long argc, char **argv)
 {
 
    /*
-    * VERSION 0.1
+    * VERSION 0.2
+    *
+    * Code developed by Marcelo Bianchi <m.tchelo@gmail.com>
     */
-    fprintf(stderr,"extract-map-parts version 0.1\n");
-   
+    fprintf(stderr,"extract-map-parts version 0.2\n");
+    if (argc < 2) {
+        fprintf(stderr,"Need at least one XY file to load.\n");
+        return 1;
+    }
+
     long ret;
     ret = ctlplot(argc, argv);
     return ret;
