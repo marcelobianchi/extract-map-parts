@@ -484,6 +484,36 @@ long *reindex(long ninp, long *l, long **selected_lines, long *nsel, long keep) 
     return stemp;
 }
 
+long insert(long ninp, float **x, float **y, long **l, long pos, long amount) {
+
+    if (amount < 0) return ninp;
+
+    // Re-allocate
+    (*x) = (float*) realloc( (*x), sizeof(float) * (ninp+amount));
+    (*y) = (float*) realloc( (*y), sizeof(float) * (ninp+amount));
+    (*l) = (long*)  realloc( (*l), sizeof(long)  * (ninp+amount));
+
+    // Shift
+    float *xm = *x;
+    float *ym = *y;
+    long *lm = *l;
+
+    fprintf(stderr,"POS: %ld NINP: %ld\n", pos, ninp);
+    memmove(&xm[pos+amount],&xm[pos],sizeof(float) * (ninp-pos));
+    memmove(&ym[pos+amount],&ym[pos],sizeof(float) * (ninp-pos));
+    memmove(&lm[pos+amount],&lm[pos],sizeof(long)  * (ninp-pos));
+
+    long i;
+    for(i=pos;i<(pos+amount);i++) {
+        xm[i] = 0.0;
+        ym[i] = 0.0;
+        lm[i] = -1;
+    }
+
+    ninp += amount;
+    return ninp;
+}
+
 long cut(long ninp, float **x, float **y, long **l, long n1, long n2) {
     long amount = (ninp - n2 - 1);
     long left = ninp - (n2 - n1 + 1);
@@ -791,6 +821,23 @@ long join(long ninp, float **x, float **y, long **l, long *selected_lines, long 
     return ninp;
 }
 
+long closepol(long ninp, float **x, float **y, long **l, long i) {
+    long s, e;
+
+    findlineedges(*l,ninp,i,&s,&e);
+    if (s == -1 || e == -1) {
+        warn("Cannot find polygons edges here.");
+        return ninp;
+    }
+
+    ninp = insert(ninp, x, y, l , e + 1, 1);
+    (*x)[e+1] = (*x)[s];
+    (*y)[e+1] = (*y)[s];
+    (*l)[e+1] = (*l)[s];
+
+    return ninp;
+}
+
 long ctlplot(long argc, char **argv)
 {
     // Data helpers
@@ -855,6 +902,13 @@ long ctlplot(long argc, char **argv)
         ch = toupper (ch);
         switch (ch)
         {
+        case 'C':
+            i = findline(ax,ay,x,y,l,ninp);
+            if (i == -1) break;
+            nninp = saveundo(ninp, x, y, l, &nx, &ny, &nl);
+            ninp = closepol(ninp, &x, &y, &l, i);
+            selected_lines = reindex(ninp,l,&selected_lines,&nsel,0);
+            break;
         case 'J':
             i = findline(ax,ay,x,y,l,ninp);
             if (i == -1) break;
@@ -1038,7 +1092,7 @@ long ctlplot(long argc, char **argv)
 
         case 'H':
             cpgsch(0.75);
-            cpgsvp(0.45,0.95,0.05,0.40);
+            cpgsvp(0.25,0.95,0.05,0.40);
             cpgswin(0.0,1.0,0.0,1.0);
             cpgrect(0.0,1.0,0.0,1.0);
             cpgsci(0);
@@ -1046,42 +1100,46 @@ long ctlplot(long argc, char **argv)
             cpgsci(1);
 
             cpgsci(5);
-            cpgmtxt("T",-1.0+0.0,0.02,0.0,"General Controls:");
+            float xpos = 0.02;
+            cpgmtxt("T",-1.0+0.0,xpos,0.0,"General Controls:");
             cpgsci(1);
-            cpgmtxt("T",-2.0-0.3,0.02,0.0,"q - Quit");
-            cpgmtxt("T",-3.0-0.3,0.02,0.0,"h - Help");
-            cpgmtxt("T",-4.0-0.3,0.02,0.0,"e - Export");
-            cpgmtxt("T",-5.0-0.3,0.02,0.0,"y - Undo");
+            cpgmtxt("T",-2.0-0.3,xpos,0.0,"q - Quit");
+            cpgmtxt("T",-3.0-0.3,xpos,0.0,"h - Help");
+            cpgmtxt("T",-4.0-0.3,xpos,0.0,"e - Export");
+            cpgmtxt("T",-5.0-0.3,xpos,0.0,"y - Undo");
 
             cpgsci(5);
-            cpgmtxt("T",-7.0+0.0,0.02,0.0,"Zoom/Plot Controls:");
+            cpgmtxt("T",-7.0+0.0,xpos,0.0,"Zoom/Plot Controls:");
             cpgsci(1);
-            cpgmtxt("T",-8.0-0.3,0.02,0.0,"x - Zoom (right mouse click)");
-            cpgmtxt("T",-9.0-0.3,0.02,0.0,"xx - Reset Zoom");
-            cpgmtxt("T",-10.0-0.3,0.02,0.0,"p - Show points On/Off");
-            cpgmtxt("T",-11.0-0.3,0.02,0.0,"l - Show lines On/Off");
-            cpgmtxt("T",-12.0-0.3,0.02,0.0,"m - Show SE markers On/Off");
+            cpgmtxt("T",-8.0-0.3,xpos,0.0,"x - Zoom (right mouse click)");
+            cpgmtxt("T",-9.0-0.3,xpos,0.0,"xx - Reset Zoom");
+            cpgmtxt("T",-10.0-0.3,xpos,0.0,"p - Show points On/Off");
+            cpgmtxt("T",-11.0-0.3,xpos,0.0,"l - Show lines On/Off");
+            cpgmtxt("T",-12.0-0.3,xpos,0.0,"m - Show SE markers On/Off");
 
             cpgsci(5);
-            cpgmtxt("T",-1.0-0.0,0.52,0.0,"Modification Commands:");
+            xpos = 0.35;
+            cpgmtxt("T",-1.0-0.0,xpos,0.0,"Modification Commands:");
             cpgsci(1);
-            cpgmtxt("T",-2.0-0.3,0.52,0.0 ,"t - Transpose XY");
-            cpgmtxt("T",-3.0-0.3,0.52,0.0,"r - Revert segment direction");
-            cpgmtxt("T",-4.0-0.3,0.52,0.0,"b - split segment");
-            cpgmtxt("T",-5.0-0.3,0.52,0.0,"n - new segment");
-            cpgmtxt("T",-6.0-0.3,0.52,0.0,"d - delete segment");
-            cpgmtxt("T",-7.0-0.3,0.52,0.0,"u - Unwrap coordinates");
-            cpgmtxt("T",-8.0-0.3,0.52,0.0,"w - Wrap coordinates");
-            cpgmtxt("T",-9.0-0.3,0.52,0.0,"j - Join current and selected");
+            cpgmtxt("T",-2.0-0.3 ,xpos,0.0 ,"t - Transpose XY");
+            cpgmtxt("T",-3.0-0.3 ,xpos,0.0,"r - Revert segment direction");
+            cpgmtxt("T",-4.0-0.3 ,xpos,0.0,"b - split segment");
+            cpgmtxt("T",-5.0-0.3 ,xpos,0.0,"n - new segment");
+            cpgmtxt("T",-6.0-0.3 ,xpos,0.0,"d - delete segment");
+            cpgmtxt("T",-7.0-0.3 ,xpos,0.0,"u - Unwrap coordinates");
+            cpgmtxt("T",-8.0-0.3 ,xpos,0.0,"w - Wrap coordinates");
+            cpgmtxt("T",-9.0-0.3 ,xpos,0.0,"j - Join current and selected");
+            cpgmtxt("T",-10.0-0.3,xpos,0.0,"c - Close polygon");
 
             cpgsci(5);
-            cpgmtxt("T",-11.0+0.0,0.52,0.0,"Selection Controls:");
+            xpos = 0.67;
+            cpgmtxt("T",-1.0+0.0,xpos,0.0,"Selection Controls:");
             cpgsci(1);
-            cpgmtxt("T",-12.0-0.3,0.52,0.0,"SPACE - Select near segment");
-            cpgmtxt("T",-13.0-0.3,0.52,0.0,"i - Invert Selection");
-            cpgmtxt("T",-14.0-0.3,0.52,0.0,"s - Select by Region ");
-            cpgmtxt("T",-15.0-0.3,0.52,0.0,"    (point intersect)");
-            cpgmtxt("T",-16.0-0.3,0.52,0.0,"z - Zero selection");
+            cpgmtxt("T",-2.0-0.3,xpos,0.0,"SPACE - Select near segment");
+            cpgmtxt("T",-3.0-0.3,xpos,0.0,"i - Invert Selection");
+            cpgmtxt("T",-4.0-0.3,xpos,0.0,"s - Select by Region ");
+            cpgmtxt("T",-5.0-0.3,xpos,0.0,"    (point intersect)");
+            cpgmtxt("T",-6.0-0.3,xpos,0.0,"z - Zero selection");
 
             // Finish Help
             cpgband (7, 0, 0, 0, &ax, &ay, &ch);
