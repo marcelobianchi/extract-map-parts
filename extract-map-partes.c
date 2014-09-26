@@ -26,10 +26,60 @@
 #include <ctype.h>
 #include <string.h>
 #include <cpgplot.h>
+#include <X11/Xlib.h>
 
 #define USEL 0
 #define NSEL 1
 #define  SEL 2
+
+void resizemax(float scale, float ratio)
+{
+    Display *disp;
+    int X, Y;
+
+    /* Xlib code */
+    disp = XOpenDisplay(NULL);
+    if (disp == NULL) {
+        fprintf(stderr, "No Display.\n");
+        return;
+    } else {
+        Y = XDisplayHeightMM(disp, 0);
+        X = XDisplayWidthMM(disp, 0);
+    }
+    XCloseDisplay(disp);
+    /* End of Xlib code */
+
+    /*
+     * Find the size that fits the window with a certain ratio
+     */
+    float width;
+    if (ratio < 0)
+        ratio = (float) Y / (float) X;
+
+    width = X * scale;
+    if ((width*ratio) > Y)
+        width = (Y / ratio) * scale;
+
+    cpgpap(width / 25.4, ratio);
+    cpgpage();
+}
+
+int opengr()
+{
+    char aux[8];
+    int i = 5;
+    int GRid;
+
+    cpgqinf("STATE", aux, &i);
+    if (strncmp(aux, "OPEN", i) != 0) {
+        GRid = cpgopen("/xwindow");
+        cpgask(0);
+        return (GRid);
+    } else {
+        fprintf(stderr, "Device alredy open !!");
+        return -1;
+    }
+}
 
 long getpointsinside(long ninp,float *x,float *y,long *l,long *selected_lines,float xt,float yt,float xb,float yb)
 {
@@ -114,7 +164,7 @@ long saveundo(long ninp, float *x, float *y, long *l, float **nx, float **ny, lo
 
 long exportline(long ninp,float *x, float *y, long *l, long *selected_lines)
 {
-    long i,pl,nexp=0;
+    long i, pl, nexp=0;
     FILE *out;
     char *filename=NULL;
 
@@ -130,7 +180,7 @@ long exportline(long ninp,float *x, float *y, long *l, long *selected_lines)
 
     i=0;
     pl=0;
-    if (selected_lines[l[i]]==SEL)
+    if (selected_lines[l[i]] == SEL)
     {
         nexp++;
         pl=1;
@@ -311,7 +361,7 @@ void reversexy(long ninp, float *x, float *y)
     }
 }
 
-long plotme(long argc, char ** argv, long ninp,float *x,float *y, long *l,long *selected_lines, long drawpoints, long drawline, long drawse, long drawlabel, long saved)
+long plotme(long argc, char ** argv, long ninp,float *x,float *y, long *l,long *selected_lines, long drawpoints, long drawline, long drawse, long drawlabel, long saved, long drawall)
 {
     long i;
     char string[1500];
@@ -380,6 +430,7 @@ long plotme(long argc, char ** argv, long ninp,float *x,float *y, long *l,long *
                 cpgsci( selected_lines[line]);
                 first = 1;
             }
+            if (!drawall && selected_lines[line] != SEL) continue;
             if (drawse) {
                 last = ((i == (ninp-1)) || (l[i] != l[i+1]));
                 if (first) {
@@ -411,7 +462,6 @@ long plotme(long argc, char ** argv, long ninp,float *x,float *y, long *l,long *
             fprintf(stderr,"OOPS %d %d", line, selected_lines[line]);
         cpgsci( selected_lines[ line ] );
         for(i=1; i < ninp; i++) {
-
             if (l[i] != line) {
                 line = l[i];
                 cpgsci( selected_lines[line] );
@@ -419,6 +469,8 @@ long plotme(long argc, char ** argv, long ninp,float *x,float *y, long *l,long *
                 oldx = x[i];
                 continue;
             }
+
+            if (!drawall && selected_lines[line] != SEL) continue;
 
             if (fabs(oldx - x[i]) > 180) {
                 cpgmove(x[i],y[i]);
@@ -638,7 +690,7 @@ long addsegment(long ninp, float **x, float **y, long **l) {
     return ninp;
 }
 
-long importfile(char *filename,float **x,float **y,long **lin, long ninp)
+long importfile(char *filename,float **x,float **y,long **l, long ninp)
 {
     FILE *in;
     long line = 0;
@@ -654,7 +706,7 @@ long importfile(char *filename,float **x,float **y,long **lin, long ninp)
     // Restore the last state
 
     // Find the last line indexed
-    dminmax(*lin,ninp,&i,&line);
+    dminmax(*l,ninp,&i,&line);
 
     // Configure the number of samples in the input line
     i = ninp;
@@ -674,10 +726,10 @@ long importfile(char *filename,float **x,float **y,long **lin, long ninp)
             if (r == 2) {
                 *x = (float *) realloc(*x, sizeof(float)*(i+1));
                 *y = (float *) realloc(*y, sizeof(float)*(i+1));
-                *lin = (long *) realloc(*lin, sizeof(long)*(i+1));
+                *l = (long *) realloc(*l, sizeof(long)*(i+1));
                 (*x)[i] = xt;
                 (*y)[i] = yt;
-                (*lin)[i] = line;
+                (*l)[i] = line;
                 i++;
             } else {
                 fprintf(stderr,"Error reading file at line %d\n%s\n",fileline,readline);
@@ -887,6 +939,7 @@ long ctlplot(long argc, char **argv)
     long drawline = 1;
     long drawse = 0;
     long drawlabel = 1;
+    long drawall = 1;
 
     // Selection
     long *selected_lines = NULL;
@@ -919,8 +972,7 @@ long ctlplot(long argc, char **argv)
 
     saved = 1;
 
-    cpgopen("/xwindow");
-    cpgask(0);
+    opengr();
 
     resetzoom(x,y,ninp,&xmin,&xmax,&ymin,&ymax);
     cpgenv(xmin,xmax,ymin,ymax,0,0);
@@ -930,27 +982,28 @@ long ctlplot(long argc, char **argv)
     {
         cpgeras();
         cpgenv(xmin, xmax, ymin, ymax, 0, 0);
-        plotme(argc, argv, ninp,x,y,l,selected_lines,drawpoints, drawline, drawse,drawlabel, saved);
+        plotme(argc, argv, ninp,x,y,l,selected_lines,drawpoints, drawline, drawse,drawlabel, saved, drawall);
         cpgband (7, 0, 0, 0, &ax, &ay, &ch);
         ch = toupper (ch);
         switch (ch)
         {
-        case 'C':
+        case 'C': // Close
             i = findline(ax,ay,x,y,l,ninp);
             if (i == -1) break;
             nninp = saveundo(ninp, x, y, l, &nx, &ny, &nl);
             ninp = closepol(ninp, &x, &y, &l, i);
             selected_lines = reindex(ninp,l,&selected_lines,&nsel,1);
             break;
-        case 'J':
+
+        case 'J': // Join
             i = findline(ax,ay,x,y,l,ninp);
             if (i == -1) break;
             nninp = saveundo(ninp, x, y, l, &nx, &ny, &nl);
             ninp = join(ninp, &x, &y, &l, selected_lines, nsel, i);
             selected_lines = reindex(ninp,l,&selected_lines,&nsel,1);
             break;
-        case 'Y':
-            // Restore last saveundo stuff
+
+        case 'Y': // UNDO
             if (nl != NULL) {
                 if (x != NULL) free(x);
                 if (y != NULL) free(y);
@@ -970,27 +1023,26 @@ long ctlplot(long argc, char **argv)
             }
             break;
 
-        case 'N':
+        case 'N': // ADD
             nninp = saveundo(ninp, x, y, l, &nx, &ny, &nl);
             ninp = addsegment(ninp,&x,&y,&l);
             selected_lines = reindex(ninp,l,&selected_lines,&nsel,1);
             saved = 0;
             break;
 
-        case 'D':
+        case 'D': // DEL
             nninp = saveundo(ninp, x, y, l, &nx, &ny, &nl);
             ninp = deletesegments(ninp,&x,&y,&l,selected_lines, nsel);
             selected_lines = reindex(ninp,l,&selected_lines,&nsel,1);
             saved = 0;
             break;
 
-        case 'X':
+        case 'X': // ZOOM
             zoom(x,y,ninp,ax,ay,&xmin,&xmax,&ymin,&ymax);
             break;
 
-        case 'B':
+        case 'B': // BREAK
             nninp = saveundo(ninp, x, y, l, &nx, &ny, &nl);
-            // Split a line segment
             i=findline(ax,ay,x,y,l,ninp);
             if (i == -1) break;
             if (selected_lines[i]==NSEL) {
@@ -1012,18 +1064,17 @@ long ctlplot(long argc, char **argv)
             saved = 0;
             break;
 
-        case 'W':
+        case 'W': // Wrap
             wrap(ninp, x);
             resetzoom(x,y,ninp,&xmin,&xmax,&ymin,&ymax);
             break;
 
-        case 'U':
+        case 'U': // Un-wrap
             unwrap(ninp, x);
             resetzoom(x,y,ninp,&xmin,&xmax,&ymin,&ymax);
             break;
 
-        case ' ':
-            // Invert selection for close line
+        case ' ': // Select
             i=findline(ax,ay,x,y,l,ninp);
             if (i == -1) break;
             if (selected_lines[i]==NSEL)
@@ -1032,24 +1083,21 @@ long ctlplot(long argc, char **argv)
                 selected_lines[i]=NSEL;
             break;
 
-        case 'R':
+        case 'R': // Revert segment direction
             nninp = saveundo(ninp, x, y, l, &nx, &ny, &nl);
-            // Reverse Line
             i=findline(ax,ay,x,y,l,ninp);
             if (i == -1) break;
             reverse_line(ninp,x,y,l,i);
             saved = 0;
             break;
 
-        case 'T':
-            // Change XZ coordinates
+        case 'T': // Transpose
             reversexy(ninp,x,y);
             resetzoom(x,y,ninp,&xmin,&xmax,&ymin,&ymax);
             saved = 0;
             break;
 
-        case 'S':
-            // Select polygon by edges
+        case 'S': // Select polygon by edges
             xt=ax;
             yt=ay;
             cpgband (2, 0, xt, yt, &ax, &ay, &ch);
@@ -1058,20 +1106,17 @@ long ctlplot(long argc, char **argv)
             getpointsinside(ninp,x,y,l,selected_lines,xt,yt,xb,yb);
             break;
 
-        case 'I':
-            // Invert selection globally
+        case 'I': // Invert selection globally
             for(i=0;i<nsel;i++)
                 selected_lines[i] = (selected_lines[i] == SEL) ? NSEL : SEL;
             break;
 
-        case 'Z':
-            // Clear all selection
+        case 'Z': // Clear all selection
             for(i=0;i<nsel;i++)
                 selected_lines[i]=NSEL;
             break;
 
-        case 'Q':
-            /* Exit !*/
+        case 'Q': /* Exit !*/
             if (saved == 0) {
                 cpgsvp(0.35,0.95,0.05,0.35);
                 cpgswin(0.0,1.0,0.0,1.0);
@@ -1103,25 +1148,49 @@ long ctlplot(long argc, char **argv)
             }
             break;
 
-        case 'E':
-            // Export selected
+        case '.': // Draw all
+            drawall = !drawall;
+            break;
+
+        case 'E': // Export selected
             exportline(ninp,x,y,l,selected_lines);
             break;
 
         case 'P':
-            // preview the export
             drawpoints = !drawpoints;
             break;
 
         case 'M':
-            // preview the export
             drawse= !drawse;
             break;
 
         case 'L':
-            // Draw the lines below points or not
             drawline = !drawline;
             break;;
+
+        case '1':
+            resizemax(0.85, 3.0 / 4.0);
+            break;
+
+        case '2':
+            resizemax(0.55, 3.0 / 4.0);
+            break;
+
+        case '3':
+            resizemax(0.35, 3.0 / 4.0);
+            break;
+
+        case '4':
+            resizemax(0.35, -1);
+            break;
+
+        case '5':
+            resizemax(0.55, -1);
+            break;
+
+        case '6':
+            resizemax(0.85, -1);
+            break;
 
         case 'H':
             cpgsch(0.75);
@@ -1140,15 +1209,17 @@ long ctlplot(long argc, char **argv)
             cpgmtxt("T",-3.0-0.3,xpos,0.0,"h - Help");
             cpgmtxt("T",-4.0-0.3,xpos,0.0,"e - Export");
             cpgmtxt("T",-5.0-0.3,xpos,0.0,"y - Undo");
+            cpgmtxt("T",-6.0-0.3,xpos,0.0,"1-6 - Change plot window size");
 
             cpgsci(5);
-            cpgmtxt("T",-7.0+0.0,xpos,0.0,"Zoom/Plot Controls:");
+            cpgmtxt("T",-8.0+0.0,xpos,0.0,"Zoom/Plot Controls:");
             cpgsci(1);
-            cpgmtxt("T",-8.0-0.3,xpos,0.0,"x - Zoom (right mouse click)");
-            cpgmtxt("T",-9.0-0.3,xpos,0.0,"xx - Reset Zoom");
-            cpgmtxt("T",-10.0-0.3,xpos,0.0,"p - Show points On/Off");
-            cpgmtxt("T",-11.0-0.3,xpos,0.0,"l - Show lines On/Off");
-            cpgmtxt("T",-12.0-0.3,xpos,0.0,"m - Show SE markers On/Off");
+            cpgmtxt("T",-9.0-0.3,xpos,0.0,"x - Zoom (right mouse click)");
+            cpgmtxt("T",-10.0-0.3,xpos,0.0,"xx - Reset Zoom");
+            cpgmtxt("T",-11.0-0.3,xpos,0.0,"p - Show points On/Off");
+            cpgmtxt("T",-12.0-0.3,xpos,0.0,"l - Show lines On/Off");
+            cpgmtxt("T",-13.0-0.3,xpos,0.0,"m - Show SE markers On/Off");
+            cpgmtxt("T",-14.0-0.3,xpos,0.0,". - Show only selected");
 
             cpgsci(5);
             xpos = 0.35;
