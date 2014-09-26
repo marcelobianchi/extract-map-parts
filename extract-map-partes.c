@@ -455,25 +455,23 @@ long *reindex(long ninp, long *l, long **selected_lines, long *nsel, long keep) 
     current = l[0];
     linen = 1;
     for(i = 1; i < ninp; i++) {
-        if (l[i] != current)
-            linen++;
+        if (l[i] != current) linen++;
         current = l[i];
     }
 
     // Build a new vector
-    long *stemp = malloc(sizeof(long) * linen);
-    for(i = 0; i < linen; i++)
-        stemp[i] = NSEL;
+    long *stemp = (long *) malloc(sizeof(long) * linen);
+    for(i = 0; i < linen; i++) stemp[i] = NSEL;
 
     // Re-build
     seq = 0;
     current = l[0];
-    if (keep && selcurrent!=NULL && current < *nsel) stemp[seq] = selcurrent[current];
+    if ( keep && (selcurrent != NULL) && (current < *nsel) && (current >= 0) ) stemp[seq] = selcurrent[current];
     for(i=0;i<ninp;i++) {
         if (l[i] != current) {
             seq ++;
             current = l[i];
-            if (keep && selcurrent!=NULL && current < *nsel) stemp[seq] = selcurrent[current];
+            if ( keep && (selcurrent != NULL) && (current < *nsel) && (current >= 0) ) stemp[seq] = selcurrent[current];
         }
         l[i] = seq;
     }
@@ -489,19 +487,35 @@ long insert(long ninp, float **x, float **y, long **l, long pos, long amount) {
     if (amount < 0) return ninp;
 
     // Re-allocate
+#ifdef DEBUG
+fprintf(stderr, "START INSERT Re-aloocating !\n");
+#endif
+
     (*x) = (float*) realloc( (*x), sizeof(float) * (ninp+amount));
     (*y) = (float*) realloc( (*y), sizeof(float) * (ninp+amount));
     (*l) = (long*)  realloc( (*l), sizeof(long)  * (ninp+amount));
 
+#ifdef DEBUG
+fprintf(stderr, "DONE!\n");
+#endif
+
     // Shift
     float *xm = *x;
     float *ym = *y;
-    long *lm = *l;
+    long  *lm = *l;
 
-    fprintf(stderr,"POS: %ld NINP: %ld\n", pos, ninp);
+#ifdef DEBUG
+fprintf(stderr, "NINP: %ld POS: %ld AMOUNT: %ld\n",ninp, pos, amount);
+fprintf(stderr, "START INSERT Move !\n");
+#endif
+
     memmove(&xm[pos+amount],&xm[pos],sizeof(float) * (ninp-pos));
     memmove(&ym[pos+amount],&ym[pos],sizeof(float) * (ninp-pos));
     memmove(&lm[pos+amount],&lm[pos],sizeof(long)  * (ninp-pos));
+
+#ifdef DEBUG
+fprintf(stderr, "DONE!\n");
+#endif
 
     long i;
     for(i=pos;i<(pos+amount);i++) {
@@ -511,6 +525,10 @@ long insert(long ninp, float **x, float **y, long **l, long pos, long amount) {
     }
 
     ninp += amount;
+
+#ifdef DEBUG
+fprintf(stderr, "NNINP: %ld POS: %ld AMOUNT: %ld\n",ninp, pos, amount);
+#endif
     return ninp;
 }
 
@@ -522,13 +540,34 @@ long cut(long ninp, float **x, float **y, long **l, long n1, long n2) {
     float *ym = *y;
     long *lm = *l;
 
+    if (left < 0) {
+        fprintf(stderr,"Cannot cut, left < 0");
+        return ninp;
+    }
+
+#ifdef DEBUG
+    fprintf(stderr,"Start CUT MOVE\n");
+#endif
+
     memmove(&xm[n1],&xm[n2+1],sizeof(float) * amount);
     memmove(&ym[n1],&ym[n2+1],sizeof(float) * amount);
     memmove(&lm[n1],&lm[n2+1],sizeof(long) * amount);
 
+#ifdef DEBUG
+    fprintf(stderr,"End CUT MOVE\n");
+#endif
+
+#ifdef DEBUG
+    fprintf(stderr,"Start CUT REALLOC\n");
+#endif
+
     *x = (float*) realloc(*x, sizeof(float) * left);
     *y = (float*) realloc(*y, sizeof(float) * left);
     *l = (long*) realloc(*l, sizeof(long) * left);
+
+#ifdef DEBUG
+    fprintf(stderr,"End CUT REALLOC\n");
+#endif
 
     return left;
 }
@@ -794,29 +833,23 @@ long join(long ninp, float **x, float **y, long **l, long *selected_lines, long 
     findlineedges(*l, ninp, source, &s1, &e1);
     findlineedges(*l, ninp, target, &s2, &e2);
 
-    long from = ninp;
-    ninp += (e1-s1+1);
-    ninp += (e2-s2+1);
+    // Allocate space
+    ninp = insert(ninp, x, y, l, e1+1, (e2 - s2 + 1));
+    findlineedges(*l, ninp, target, &s2, &e2);
 
-    (*x) = (float *) realloc((*x), sizeof(float)*(ninp));
-    (*y) = (float *) realloc((*y), sizeof(float)*(ninp));
-    (*l) = (long *)  realloc((*l), sizeof(long)*(ninp));
-
-    for(i=s1;i<=e1;i++,from++) {
-        (*x)[from] = (*x)[i];
-        (*y)[from] = (*y)[i];
-        (*l)[from] = -1;
-    }
-
-    for(i=s2;i<=e2;i++,from++) {
-        (*x)[from] = (*x)[i];
-        (*y)[from] = (*y)[i];
-        (*l)[from] = -1;
+    // Copy target
+    long to = e1 + 1;
+    for(i=s2;i<=e2;i++,to++) {
+        (*x)[to] = (*x)[i];
+        (*y)[to] = (*y)[i];
+        (*l)[to] = (*l)[s1];
     }
 
     // Clean up
     selected_lines[target] = SEL;
+    selected_lines[source] = NSEL;
     ninp = deletesegments(ninp, x, y, l, selected_lines, nsel);
+    selected_lines[source] = SEL;
 
     return ninp;
 }
@@ -907,14 +940,14 @@ long ctlplot(long argc, char **argv)
             if (i == -1) break;
             nninp = saveundo(ninp, x, y, l, &nx, &ny, &nl);
             ninp = closepol(ninp, &x, &y, &l, i);
-            selected_lines = reindex(ninp,l,&selected_lines,&nsel,0);
+            selected_lines = reindex(ninp,l,&selected_lines,&nsel,1);
             break;
         case 'J':
             i = findline(ax,ay,x,y,l,ninp);
             if (i == -1) break;
             nninp = saveundo(ninp, x, y, l, &nx, &ny, &nl);
             ninp = join(ninp, &x, &y, &l, selected_lines, nsel, i);
-            selected_lines = reindex(ninp,l,&selected_lines,&nsel,0);
+            selected_lines = reindex(ninp,l,&selected_lines,&nsel,1);
             break;
         case 'Y':
             // Restore last saveundo stuff
