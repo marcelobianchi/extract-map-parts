@@ -699,8 +699,9 @@ long importfile(char *filename,float **x,float **y,long **l, long ninp)
     char readline[500] = "";
 
     if ((in=fopen(filename,"r"))==NULL) {
-        fprintf(stderr,"Cannot open and read the give file %s\n",filename);
-        return -1;
+        sprintf(readline,"Cannot open and read the give file %s",filename);
+        warn(readline);
+        return ninp;
     }
 
     // Restore the last state
@@ -1192,6 +1193,15 @@ long ctlplot(long argc, char **argv)
             resizemax(0.85, -1);
             break;
 
+        case '+': {
+            char *newfile = getfilename();
+            ninp = importfile(newfile, &x, &y, &l, ninp);
+            selected_lines = reindex(ninp,l,&selected_lines,&nsel,1);
+            free(newfile);
+            newfile = NULL;
+        }
+            break;
+
         case 'H':
             cpgsch(0.75);
             cpgsvp(0.25,0.95,0.05,0.40);
@@ -1209,6 +1219,7 @@ long ctlplot(long argc, char **argv)
             cpgmtxt("T",-3.0-0.3,xpos,0.0,"h - Help");
             cpgmtxt("T",-4.0-0.3,xpos,0.0,"e - Export");
             cpgmtxt("T",-5.0-0.3,xpos,0.0,"y - Undo");
+            cpgmtxt("T",-6.0-0.3,xpos,0.0,"+ - Import a file into memory");
             cpgmtxt("T",-6.0-0.3,xpos,0.0,"1-6 - Change plot window size");
 
             cpgsci(5);
