@@ -107,7 +107,7 @@ void warn(char *message) {
     cpgband (7, 0, 0, 0, &ax, &ay, &ch);
 }
 
-char *getfilename()
+char *getfilename(char *message)
 {
     char *filename;
     char *p,ch;
@@ -124,7 +124,7 @@ char *getfilename()
         cpgsci(0);
         cpgrect(0.01,.99,0.01,0.99);
         cpgsci(1);
-        cpgmtxt("T",-1.0,0.02,.0,"Enter filename to export:");
+        cpgmtxt("T",-1.0,0.02,.0,message);
         cpgmtxt("T",-2.0,0.02,.0,filename);
         cpgband (7, 0, 0, 0, &ax, &ay, &ch);
         switch(ch)
@@ -170,7 +170,7 @@ long exportline(long ninp,float *x, float *y, long *l, long *selected_lines)
 
     if (ninp == 0) return;
 
-    filename=getfilename();
+    filename=getfilename("Enter filename to export:");
     out=fopen(filename,"w");
     if (out == NULL )
     {
@@ -1194,7 +1194,7 @@ long ctlplot(long argc, char **argv)
             break;
 
         case '+': {
-            char *newfile = getfilename();
+            char *newfile = getfilename("Enter filename to import:");
             ninp = importfile(newfile, &x, &y, &l, ninp);
             selected_lines = reindex(ninp,l,&selected_lines,&nsel,1);
             free(newfile);
