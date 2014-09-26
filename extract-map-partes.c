@@ -1220,17 +1220,17 @@ long ctlplot(long argc, char **argv)
             cpgmtxt("T",-4.0-0.3,xpos,0.0,"e - Export");
             cpgmtxt("T",-5.0-0.3,xpos,0.0,"y - Undo");
             cpgmtxt("T",-6.0-0.3,xpos,0.0,"+ - Import a file into memory");
-            cpgmtxt("T",-6.0-0.3,xpos,0.0,"1-6 - Change plot window size");
+            cpgmtxt("T",-7.0-0.3,xpos,0.0,"1-6 - Change plot window size");
 
             cpgsci(5);
-            cpgmtxt("T",-8.0+0.0,xpos,0.0,"Zoom/Plot Controls:");
+            cpgmtxt("T",-9.0+0.0,xpos,0.0,"Zoom/Plot Controls:");
             cpgsci(1);
-            cpgmtxt("T",-9.0-0.3,xpos,0.0,"x - Zoom (right mouse click)");
-            cpgmtxt("T",-10.0-0.3,xpos,0.0,"xx - Reset Zoom");
-            cpgmtxt("T",-11.0-0.3,xpos,0.0,"p - Show points On/Off");
-            cpgmtxt("T",-12.0-0.3,xpos,0.0,"l - Show lines On/Off");
-            cpgmtxt("T",-13.0-0.3,xpos,0.0,"m - Show SE markers On/Off");
-            cpgmtxt("T",-14.0-0.3,xpos,0.0,". - Show only selected");
+            cpgmtxt("T",-10.0-0.3,xpos,0.0,"x - Zoom (right mouse click)");
+            cpgmtxt("T",-11.0-0.3,xpos,0.0,"xx - Reset Zoom");
+            cpgmtxt("T",-12.0-0.3,xpos,0.0,"p - Show points On/Off");
+            cpgmtxt("T",-13.0-0.3,xpos,0.0,"l - Show lines On/Off");
+            cpgmtxt("T",-14.0-0.3,xpos,0.0,"m - Show SE markers On/Off");
+            cpgmtxt("T",-15.0-0.3,xpos,0.0,". - Show only selected");
 
             cpgsci(5);
             xpos = 0.35;
