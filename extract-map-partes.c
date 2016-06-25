@@ -168,7 +168,7 @@ long exportline(long ninp,float *x, float *y, long *l, long *selected_lines)
     FILE *out;
     char *filename=NULL;
 
-    if (ninp == 0) return;
+    if (ninp == 0) return -1;
 
     filename=getfilename("Enter filename to export:");
     out=fopen(filename,"w");
@@ -184,7 +184,7 @@ long exportline(long ninp,float *x, float *y, long *l, long *selected_lines)
     {
         nexp++;
         pl=1;
-        fprintf(out,"> Line %d\n",l[i]);
+        fprintf(out,"> Line %ld\n",l[i]);
     }
     if (pl) fprintf(out,"%f %f\n",x[i],y[i]);
 
@@ -197,14 +197,14 @@ long exportline(long ninp,float *x, float *y, long *l, long *selected_lines)
             {
                 nexp++;
                 pl=1;
-                fprintf(out,"> Line %d\n",l[i]);
+                fprintf(out,"> Line %ld\n",l[i]);
             }
         }
 
         if (pl) fprintf(out,"%f %f\n",x[i],y[i]);
     }
 
-    fprintf(stderr, "Exported %d lines to file %s\n",nexp,filename);
+    fprintf(stderr, "Exported %ld lines to file %s\n",nexp,filename);
     if (filename!=NULL) free(filename);
     filename=NULL;
     fclose(out);
@@ -215,7 +215,7 @@ void reverse_line(long ninp,float *x,float *y,long *l, long line)
 {
     long n;
     float *xt, *yt;
-    long i,j, pt, pti=-999;
+    long i, pt, pti=-999;
 
     for(i=0,n=0;i<ninp;i++)
     {
@@ -375,7 +375,7 @@ long plotme(long argc, char ** argv, long ninp,float *x,float *y, long *l,long *
         cpgsch(0.8);
         cpgmtxt("T",1,1.0,1.0,"Press 'h' for help");
         dminmax(l,ninp,&a,&b);
-        sprintf(string, "%d points from %d segments loaded %s",ninp, b+1, (saved)?"":"*");
+        sprintf(string, "%ld points from %ld segments loaded %s",ninp, b+1, (saved)?"":"*");
         cpgmtxt("T",1,0.0,0.0,string);
 
         // Bottom infos
@@ -409,7 +409,7 @@ long plotme(long argc, char ** argv, long ninp,float *x,float *y, long *l,long *
     if ((ninp == 0)||(x == NULL)||(y == NULL)||(l == NULL)||(selected_lines == NULL)) {
         cpgsch(1.0);
         cpgsci(1);
-        return;
+        return -1;
     }
 
     if (drawpoints) {
@@ -459,7 +459,7 @@ long plotme(long argc, char ** argv, long ninp,float *x,float *y, long *l,long *
         cpgmove(x[0],y[0]);
         oldx = x[0];
         if ( selected_lines[ line ] != NSEL && selected_lines[ line ] != SEL)
-            fprintf(stderr,"OOPS %d %d", line, selected_lines[line]);
+            fprintf(stderr,"OOPS %ld %ld", line, selected_lines[line]);
         cpgsci( selected_lines[ line ] );
         for(i=1; i < ninp; i++) {
             if (l[i] != line) {
@@ -733,7 +733,7 @@ long importfile(char *filename,float **x,float **y,long **l, long ninp)
                 (*l)[i] = line;
                 i++;
             } else {
-                fprintf(stderr,"Error reading file at line %d\n%s\n",fileline,readline);
+                fprintf(stderr,"Error reading file at line %ld\n%s\n",fileline,readline);
                 return (-1);
             }
         }
@@ -1295,7 +1295,7 @@ long ctlplot(long argc, char **argv)
     return 0;
 }
 
-long main(long argc, char **argv)
+int main(int argc, char **argv)
 {
 
    /*
