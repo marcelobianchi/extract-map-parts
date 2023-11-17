@@ -1333,6 +1333,8 @@ int ctlplot(long argc, char **argv)
             cpgmtxt("T",-8.0-0.3 ,xpos,0.0,"w - Wrap coordinates");
             cpgmtxt("T",-9.0-0.3 ,xpos,0.0,"j - Join current and selected");
             cpgmtxt("T",-10.0-0.3,xpos,0.0,"c - Close polygon");
+            cpgmtxt("T",-11.0-0.3,xpos,0.0,"k - Perform a polygon auto-break");
+            cpgmtxt("T",-12.0-0.3,xpos,0.0,"    based on a factor * avg. value.");
 
             cpgsci(5);
             xpos = 0.67;
