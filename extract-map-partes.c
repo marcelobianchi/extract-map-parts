@@ -110,7 +110,7 @@ void warn(char *message) {
 char *getfilename(char *message)
 {
     char *filename;
-    char *p,ch;
+    char *p,ch = ' ';
     float ax,ay;
 
     filename=malloc(128*sizeof(char));
@@ -409,6 +409,7 @@ long plotme(long argc, char ** argv, long ninp,float *x,float *y, long *l,long *
     if ((ninp == 0)||(x == NULL)||(y == NULL)||(l == NULL)||(selected_lines == NULL)) {
         cpgsch(1.0);
         cpgsci(1);
+
         return -1;
     }
 
@@ -924,7 +925,83 @@ long closepol(long ninp, float **x, float **y, long **l, long i) {
     return ninp;
 }
 
-long ctlplot(long argc, char **argv)
+int lerint(char *text)
+{
+    float ax = 0.0, ay = 0.0;
+    char ch[2] = "0";
+    int num = 0;
+    char retorno[128];
+
+    ch[1] = '\0';
+    while (ch[0] != 13) {
+        cpgsubp(1, 1);
+        cpgsvp(0.4, 0.9, 0.10, 0.30);
+        cpgswin(0.0, 1.0, 0.0, 1.0);
+
+        cpgrect(0.0, 1.0, 0.0, 1.0);
+        cpgsci(0);
+        cpgrect(0.01, .99, 0.01, 0.99);
+        cpgsci(1);
+
+        cpgmtxt("T", -1.0, 0.02, .0, text);
+
+        sprintf(retorno, "%d", num);
+        cpgmtxt("T", -2.0, 0.02, .0, retorno);
+        cpgband(7, 0, 0, 0, &ax, &ay, &ch[0]);
+        ch[1] = '\0';
+
+        switch (ch[0]) {
+        case '-':
+            num = -num;
+            break;
+        case 8:
+            num = num / 10;
+            break;
+        case 13:
+            break;
+        default:
+            num = num * 10 + atoi(ch);
+            break;
+        }
+    }
+
+    return num;
+}
+
+int autobreak(long ninp, float *x, float *y, long *l, int factor) {
+    float media = 0;
+    long ct = 0;
+    int saved = 1;
+
+    for(int i = 1; i < ninp; i ++) {
+        float parcel = sqrt( (x[i] - x[i-1])*(x[i] - x[i-1]) + (y[i] - y[i-1])*(y[i] - y[i-1]));
+        media += parcel;
+        ct += 1;
+    }
+
+    media /= ct;
+
+    int j1, j2;
+    for(j1 = 1; j1 < ninp; j1 ++) {
+        float parcel = sqrt( (x[j1] - x[j1-1])*(x[j1] - x[j1-1]) + (y[j1] - y[j1-1])*(y[j1] - y[j1-1]));
+        if (parcel > factor*media) {
+            saved = 0;
+            long lmin,lmax;
+            dminmax(l,ninp,&lmin,&lmax);
+            lmax ++;
+
+            for(j2 = j1; j2 < ninp && l[j2] == l[j1]; j2++);
+            for(int i = j1; i <= j2; i++) {
+                l[i] = lmax;
+            }
+        }
+
+    }
+
+    return saved;
+}
+
+int ctlplot(long argc, char **argv)
 {
     // Data helpers
     float xmin,xmax;
@@ -988,6 +1065,17 @@ long ctlplot(long argc, char **argv)
         ch = toupper (ch);
         switch (ch)
         {
+        case 'K': // auto-split segments
+            nninp = saveundo(ninp, x, y, l, &nx, &ny, &nl);
+            {
+                float factor = lerint("Which factor to scale the average to cut?");
+                saved = autobreak(ninp,x,y,l,factor);
+            }
+
+            selected_lines = reindex(ninp,l,&selected_lines,&nsel,1);
+
+            break;
+
         case 'C': // Close
             i = findline(ax,ay,x,y,l,ninp);
             if (i == -1) break;
